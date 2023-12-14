@@ -7,12 +7,15 @@ package osproject;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.util.ArrayList;
 import java.util.Scanner;
 import java.util.List;
-import model.MazeSolver;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
+import model.MazeSolverOneThreadRecursion;
 
 /**
  *
@@ -26,13 +29,18 @@ public class MazeSolverGUI extends javax.swing.JFrame {
 
     private static final int CELL_SIZE = 50; // Size of each cell in pixels
 
+    private int threadId;
     private JButton submitButton;
     private JPanel mazePanel;
     private int mazeSize;
     private int[][] mazeMatrix;
     private boolean[][] visitedCells;
 
-    private MazeSolver mazeSolverThread;
+    private MazeSolverOneThreadRecursion mazeSolverThread;
+
+    private static final Color[] THREAD_COLORS = {Color.GREEN, Color.ORANGE, Color.MAGENTA, Color.CYAN};
+    private List<MazeSolverThread> solverThreads;
+    private ReentrantLock lock;
 
     public MazeSolverGUI(int mazeSize) {
         this.mazeSize = mazeSize;
@@ -83,6 +91,9 @@ public class MazeSolverGUI extends javax.swing.JFrame {
         setLocationRelativeTo(null);
         setVisible(true);
 
+        solverThreads = new ArrayList<>();
+        lock = new ReentrantLock();
+
         startMazeSolver();
     }
 
@@ -94,7 +105,8 @@ public class MazeSolverGUI extends javax.swing.JFrame {
                     g.setColor(Color.BLACK);
                 } else {
                     if (visitedCells[i][j]) {
-                        g.setColor(Color.BLUE); // Highlight visited cells
+                        g.setColor(MazeSolverGUI.THREAD_COLORS[threadId % MazeSolverGUI.THREAD_COLORS.length]);
+                        System.out.println("Thread Color: " + threadId);
                     } else {
                         g.setColor(Color.WHITE);
                     }
@@ -131,23 +143,87 @@ public class MazeSolverGUI extends javax.swing.JFrame {
             JOptionPane.showMessageDialog(this, "Please set at least one obstacle (cell with value 0).");
             return;
         }
-
-        mazeSolverThread = new MazeSolver(mazeMatrix, visitedCells, this);
-        Thread solverThread = new Thread(mazeSolverThread);
-        solverThread.start();
+        ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COLORS.length); // Limiting the number of threads to 6
+        for (int i = 0; i < THREAD_COLORS.length; i++) {
+            MazeSolverThread solverThread = new MazeSolverThread(i);
+            solverThreads.add(solverThread);
+            executorService.submit(solverThread);
+        }
+        executorService.shutdown();
+//        mazeSolverThread = new MazeSolverOneThreadRecursion(mazeMatrix, visitedCells, this);
+//        Thread solverThread = new Thread(mazeSolverThread);
+//        solverThread.start();
     }
 
-    // Method called by MazeSolver to update GUI with rat's movement
+    private class MazeSolverThread implements Runnable {
+
+        private int id;
+        private int currentRow;
+        private int currentCol;
+        private Color color;
+
+        public MazeSolverThread(int id) {
+            this.id = id;
+            this.currentRow = 0;
+            this.currentCol = 0;
+            this.color = THREAD_COLORS[id % THREAD_COLORS.length];
+        }
+
+        @Override
+        public void run() {
+            solveMaze(currentRow, currentCol);
+        }
+
+        private void solveMaze(int row, int col) {
+            // Acquire the lock to ensure mutual exclusion when updating the GUI          
+            lock.lock();
+            Color threadColor = color;
+            try {
+                visitedCells[row][col] = true;
+                mazePanel.repaint(); // Update the GUI
+                threadId = id;
+            } finally {
+                // Release the lock
+                lock.unlock();
+            }
+
+            try {
+                Thread.sleep(1000); // Sleep for 500 milliseconds between each step
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            System.out.println("Thread " + id + " - Color: " + threadColor);
+
+            if (row == mazeSize - 1 && col == mazeSize - 1) {
+                JOptionPane.showMessageDialog(MazeSolverGUI.this, "Maze solved by Thread " + id + "!");
+                return;
+            }
+
+            // Move right if it's possible
+            if (col < mazeSize - 1 && mazeMatrix[row][col + 1] == 1 && !visitedCells[row][col + 1]) {
+                solveMaze(row, col + 1);
+            }
+
+            // Move down if it's possible
+            if (row < mazeSize - 1 && mazeMatrix[row + 1][col] == 1 && !visitedCells[row + 1][col]) {
+                solveMaze(row + 1, col);
+            }
+        }
+    }
+
+    // Method called by MazeSolverOneThreadRecursion to update GUI with rat's movement
     public synchronized void updateRatPosition(int row, int col) {
         visitedCells[row][col] = true;
         mazePanel.repaint();
     }
+
     public synchronized void updateRatPositionFalse(int row, int col) {
         visitedCells[row][col] = false;
         mazePanel.repaint();
     }
 
-    // Method called by MazeSolver to set successful path in GUI
+    // Method called by MazeSolverOneThreadRecursion to set successful path in GUI
     public synchronized void setSuccessfulPath(List<int[]> successfulPath) {
         for (int[] cell : successfulPath) {
             visitedCells[cell[0]][cell[1]] = true;
@@ -201,7 +277,7 @@ public class MazeSolverGUI extends javax.swing.JFrame {
         }
         //</editor-fold>
 
-        System.out.print("Enter size of maze: ");
+        System.out.print("Enter the dimensions of the maze (N x N): ");
         Scanner input = new Scanner(System.in);
         int mazeSize = input.nextInt();
         SwingUtilities.invokeLater(() -> new MazeSolverGUI(mazeSize));
