@@ -38,7 +38,7 @@ public class MazeSolverGUI extends javax.swing.JFrame {
 
     private MazeSolverOneThreadRecursion mazeSolverThread;
 
-    private static final Color[] THREAD_COLORS = {Color.GREEN, Color.ORANGE, Color.MAGENTA, Color.CYAN};
+    private static final Color[] THREAD_COLORS = {Color.GREEN, Color.ORANGE, Color.MAGENTA, Color.CYAN, Color.YELLOW};
     private List<MazeSolverThread> solverThreads;
     private ReentrantLock lock;
 
@@ -138,6 +138,11 @@ public class MazeSolverGUI extends javax.swing.JFrame {
                 break;
             }
         }
+        
+        if(mazeMatrix[0][0] == 0) {
+            JOptionPane.showMessageDialog(this, "First cell can't be dead. Try again!!");
+            return;
+        }
 
         if (!hasObstacle) {
             JOptionPane.showMessageDialog(this, "Please set at least one obstacle (cell with value 0).");
@@ -174,7 +179,7 @@ public class MazeSolverGUI extends javax.swing.JFrame {
             solveMaze(currentRow, currentCol);
         }
 
-        private void solveMaze(int row, int col) {
+        private boolean solveMaze(int row, int col) {
             // Acquire the lock to ensure mutual exclusion when updating the GUI          
             lock.lock();
             Color threadColor = color;
@@ -197,7 +202,7 @@ public class MazeSolverGUI extends javax.swing.JFrame {
 
             if (row == mazeSize - 1 && col == mazeSize - 1) {
                 JOptionPane.showMessageDialog(MazeSolverGUI.this, "Maze solved by Thread " + id + "!");
-                return;
+                return true;
             }
 
             // Move right if it's possible
@@ -209,6 +214,8 @@ public class MazeSolverGUI extends javax.swing.JFrame {
             if (row < mazeSize - 1 && mazeMatrix[row + 1][col] == 1 && !visitedCells[row + 1][col]) {
                 solveMaze(row + 1, col);
             }
+            
+            return false;
         }
     }
 
